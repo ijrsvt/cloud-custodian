@@ -346,6 +346,62 @@ class DisableApiTermination(Filter):
         return attr_val['DisableApiTermination']['Value']
 
 
+
+@filters.register('stop-protected')
+class DisableApiStop(Filter):
+    """EC2 instances with ``disableApiStop`` attribute set
+
+    Filters EC2 instances with ``disableApiStop`` attribute set to true.
+
+    :Example:
+
+    .. code-block:: yaml
+
+        policies:
+          - name: stop-protection-enabled
+            resource: ec2
+            filters:
+              - type: stop-protected
+
+    :Example:
+
+    .. code-block:: yaml
+
+        policies:
+          - name: stop-protection-NOT-enabled
+            resource: ec2
+            filters:
+              - not:
+                - type: stop-protected
+    """
+
+    schema = type_schema('stop-protected')
+    permissions = ('ec2:DescribeInstanceAttribute',)
+
+    def get_permissions(self):
+        perms = list(self.permissions)
+        perms.extend(self.manager.get_permissions())
+        return perms
+
+    def process(self, resources, event=None):
+        client = utils.local_session(
+            self.manager.session_factory).client('ec2')
+        return [r for r in resources
+                if self.is_stop_protection_enabled(client, r)]
+
+    def is_stop_protection_enabled(self, client, inst):
+        attr_val = self.manager.retry(
+            client.describe_instance_attribute,
+            Attribute='disableApiStop',
+            InstanceId=inst['InstanceId']
+        )
+        if 'disableApiStop' not in attr_val:
+            raise RuntimeError("Upgrade botocore to a version > 1.26.7 to filter for stop-protected instances.`")
+        return attr_val['disableApiStop']['Value']
+
+
+
+
 class InstanceImageBase:
 
     def prefetch_instance_images(self, instances):
@@ -2051,6 +2107,7 @@ class InstanceAttribute(ValueFilter):
         'kernel',
         'ramdisk',
         'userData',
+        'disableApiStop',
         'disableApiTermination',
         'instanceInitiatedShutdownBehavior',
         'rootDeviceName',
